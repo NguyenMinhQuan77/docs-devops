@@ -1,23 +1,55 @@
-# Lab 2: Triển khai Nginx Load Balancer & Cụm Web Server LEMP (Ubuntu)
+# Lab 2: Triển khai Nginx Load Balancer & Cụm Web Server (HA)
 
 ## 1. Mô hình hệ thống (Topology)
 Hệ thống gồm 3 Node chạy hệ điều hành Ubuntu:
-*   **Proxy Server (Load Balancer):** Đứng ngoài cùng, nhận request từ người dùng và chia tải.
-*   **Backend 1 (BE1) - `192.168.10.200`:** Chạy Web Server (Nginx + PHP-FPM) và chứa Database chính (MariaDB).
-*   **Backend 2 (BE2) - `192.168.10.205`:** Chỉ chạy Web Server (Nginx + PHP-FPM), kết nối chung vào Database của BE1.
+*   **Backend 1 (BE1) - `192.168.10.200`:** Đã cấu hình LEMP Stack và chạy WordPress hoàn chỉnh từ **Lab 1**.
+*   **Backend 2 (BE2) - `192.168.10.205`:** Node Web Server mới, chỉ chạy Nginx + PHP-FPM, kết nối chung vào Database của BE1.
+*   **Proxy Server (Load Balancer):** Đứng ngoài cùng, nhận request từ người dùng và chia tải cho BE1 & BE2.
 *   **Domain Name:** `test.com`
 
 ---
 
-## 2. Cấu hình Backend 1 (BE1 - 192.168.10.200)
+## 2. Tùy chỉnh Backend 1 (Cấp quyền Database cho BE2)
+*(Lưu ý: Bỏ qua các bước cài đặt Nginx, PHP, tải Web vì đã làm ở Lab 1. Chỉ thực hiện cấu hình DB).*
 
-### 2.1 Cài đặt các gói phần mềm cần thiết
+### 2.1 Cấu hình MariaDB lắng nghe IP bên ngoài
+Mở file cấu hình MariaDB:
 ```bash
-sudo apt update
-sudo apt install -y nginx mariadb-server php8.2-fpm php8.2-mysql curl
+sudo vi /etc/mysql/mariadb.conf.d/50-server.cnf
+```
+Tìm và đổi dòng `bind-address` thành:
+```ini
+bind-address = 0.0.0.0
+```
+Khởi động lại dịch vụ MariaDB:
+```bash
+sudo systemctl restart mariadb
 ```
 
-### 2.2 Tạo chứng chỉ SSL tự ký (Self-signed)
+### 2.2 Cấp quyền truy cập cho IP của BE2
+Truy cập vào giao diện quản trị database:
+```bash
+sudo mysql
+```
+Cấp quyền cho user `test` truy cập từ IP của BE2 (`.205`):
+```sql
+CREATE USER 'test'@'192.168.10.205' IDENTIFIED BY 'test123';
+GRANT ALL PRIVILEGES ON wordpress.* TO 'test'@'192.168.10.205';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+---
+
+## 3. Triển khai Backend 2 (BE2 - 192.168.10.205)
+
+### 3.1 Cài đặt phần mềm (Không cài MariaDB)
+```bash
+sudo apt update
+sudo apt install -y nginx php8.2-fpm php8.2-mysql curl
+```
+
+### 3.2 Tạo chứng chỉ SSL tự ký
 ```bash
 sudo mkdir -p /etc/nginx/ssl
 sudo openssl req -x509 -newkey rsa:4096 -nodes \
@@ -27,33 +59,7 @@ sudo openssl req -x509 -newkey rsa:4096 -nodes \
   -subj "/CN=test.com"
 ```
 
-### 2.3 Cấu hình Database MariaDB
-Mở cấu hình MariaDB để cho phép kết nối từ xa:
-```bash
-sudo vi /etc/mysql/mariadb.conf.d/50-server.cnf
-```
-Đổi dòng `bind-address` thành:
-```ini
-bind-address = 0.0.0.0
-```
-Khởi động lại MariaDB:
-```bash
-sudo systemctl restart mariadb
-```
-Tạo Database và cấp quyền cho cả BE1 (localhost) và BE2 (.205):
-```bash
-sudo mysql
-
-CREATE DATABASE wordpress;
-CREATE USER 'test'@'localhost' IDENTIFIED BY 'test123';
-CREATE USER 'test'@'192.168.10.205' IDENTIFIED BY 'test123';
-GRANT ALL PRIVILEGES ON wordpress.* TO 'test'@'localhost';
-GRANT ALL PRIVILEGES ON wordpress.* TO 'test'@'192.168.10.205';
-FLUSH PRIVILEGES;
-EXIT;
-```
-
-### 2.4 Cấu hình Nginx & Tải mã nguồn WordPress
+### 3.3 Tải mã nguồn & Trỏ Database về BE1
 ```bash
 sudo mkdir -p /home/www/test.com
 cd /home/www/test.com
@@ -62,19 +68,24 @@ sudo tar -xvf latest.tar.gz
 sudo mv wordpress/* .
 sudo rm -rf wordpress latest.tar.gz
 
-# Cấu hình wp-config.php
 sudo cp wp-config-sample.php wp-config.php
-sudo sed -i "s/database_name_here/wordpress/" wp-config.php
-sudo sed -i "s/username_here/test/" wp-config.php
-sudo sed -i "s/password_here/test123/" wp-config.php
-# Trên BE1, DB_HOST vẫn là localhost (mặc định)
-
-# Cấp quyền cho thư mục web
+sudo vi wp-config.php
+```
+Sửa các thông số Database (lưu ý **DB_HOST** trỏ về IP của BE1):
+```php
+define( 'DB_NAME', 'wordpress' );
+define( 'DB_USER', 'test' );
+define( 'DB_PASSWORD', 'test123' );
+define( 'DB_HOST', '192.168.10.200' ); /* Trỏ về DB của BE1 */
+```
+Phân quyền thư mục web:
+```bash
 sudo chown -R www-data:www-data /home/www/test.com
 sudo chmod -R 755 /home/www/test.com
 ```
 
-Tạo file vhost cho Nginx trên BE1:
+### 3.4 Cấu hình Nginx
+Tạo file vhost:
 ```bash
 sudo vi /etc/nginx/sites-available/test.com
 ```
@@ -111,63 +122,7 @@ sudo systemctl restart nginx
 
 ---
 
-## 3. Cấu hình Backend 2 (BE2 - 192.168.10.205)
-
-### 3.1 Cài đặt phần mềm (Không cài MariaDB)
-```bash
-sudo apt update
-sudo apt install -y nginx php8.2-fpm php8.2-mysql curl
-```
-
-### 3.2 Tạo chứng chỉ SSL tự ký
-Làm tương tự bước 2.2 của BE1:
-```bash
-sudo mkdir -p /etc/nginx/ssl
-sudo openssl req -x509 -newkey rsa:4096 -nodes \
-  -keyout /etc/nginx/ssl/nginx.key \
-  -out /etc/nginx/ssl/nginx.crt \
-  -days 365 \
-  -subj "/CN=test.com"
-```
-
-### 3.3 Tải mã nguồn & Cấu hình WordPress kết nối DB từ xa
-Làm tương tự bước 2.4, nhưng trong file `wp-config.php` phải sửa lại **DB_HOST**:
-```bash
-sudo mkdir -p /home/www/test.com
-cd /home/www/test.com
-sudo curl -O [https://wordpress.org/latest.tar.gz](https://wordpress.org/latest.tar.gz)
-sudo tar -xvf latest.tar.gz
-sudo mv wordpress/* .
-sudo rm -rf wordpress latest.tar.gz
-
-sudo cp wp-config-sample.php wp-config.php
-sudo vi wp-config.php
-```
-Sửa các thông số sau:
-```php
-define( 'DB_NAME', 'wordpress' );
-define( 'DB_USER', 'test' );
-define( 'DB_PASSWORD', 'test123' );
-define( 'DB_HOST', '192.168.10.200' ); /* Trỏ về IP của BE1 */
-```
-Phân quyền thư mục:
-```bash
-sudo chown -R www-data:www-data /home/www/test.com
-sudo chmod -R 755 /home/www/test.com
-```
-
-### 3.4 Cấu hình Nginx
-Tạo file vhost (`/etc/nginx/sites-available/test.com`) có nội dung **giống hệt BE1** ở bước 2.4. Sau đó kích hoạt:
-```bash
-sudo ln -s /etc/nginx/sites-available/test.com /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
----
-
-## 4. Cấu hình Proxy Server (Load Balancer)
+## 4. Triển khai Proxy Server (Load Balancer)
 
 Truy cập vào máy Proxy, cài đặt Nginx:
 ```bash
@@ -175,7 +130,7 @@ sudo apt update
 sudo apt install -y nginx
 ```
 
-Tạo SSL tự ký (giống bước 2.2). Sau đó, tạo file vhost điều hướng traffic:
+Tạo SSL tự ký (giống bước 3.2). Sau đó, tạo file vhost điều hướng traffic:
 ```bash
 sudo vi /etc/nginx/sites-available/test.com
 ```
@@ -190,7 +145,7 @@ upstream backend_servers {
 server {
     listen 80;
     server_name test.com [www.test.com](https://www.test.com);
-    # Chuyển hướng toàn bộ HTTP sang HTTPS
+    # Chuyển hướng HTTP sang HTTPS
     return 301 https://$host$request_uri;
 }
 
@@ -202,7 +157,7 @@ server {
     ssl_certificate_key /etc/nginx/ssl/nginx.key;
 
     location / {
-        # Yêu cầu proxy giao tiếp bằng HTTPS do Backend chặn cổng 80
+        # Proxy giao tiếp bằng HTTPS do Backend chỉ mở cổng 443
         proxy_pass https://backend_servers;
         
         # Đẩy IP thật của Client về Backend
@@ -227,12 +182,12 @@ sudo systemctl restart nginx
 ## 5. Kiểm thử hệ thống (Testing Failover)
 
 1. **Trỏ file Hosts trên máy trạm (Client):**
-   Thêm IP của máy **Proxy Server** đi kèm domain `test.com` vào file `hosts`.
+   Thêm IP của máy **Proxy Server** đi kèm domain `test.com` vào file `hosts` của máy tính đang lab.
    
-2. **Cài đặt WordPress:**
-   Mở trình duyệt truy cập `https://test.com`, màn hình cài đặt của WordPress sẽ hiện ra. Thực hiện các bước Setup Wizard.
+2. **Kiểm tra hoạt động bình thường:**
+   Mở trình duyệt truy cập `https://test.com`, hệ thống sẽ tải bình thường.
 
-3. **Kiểm tra tính năng cân bằng tải và High Availability (HA):**
-   * Vào máy **BE1**, tắt dịch vụ Nginx: `sudo systemctl stop nginx`
+3. **Kiểm tra tính năng cân bằng tải và HA:**
+   * Truy cập vào máy **BE1**, tắt dịch vụ Nginx: `sudo systemctl stop nginx`
    * Ra trình duyệt tải lại trang (F5).
-   * **Kết quả mong đợi:** Trang web vẫn hoạt động bình thường, toàn bộ request đã được máy Proxy tự động đẩy sang **BE2 (192.168.10.205)** để xử lý, không gây gián đoạn (Downtime) cho người dùng.
+   * **Kết quả:** Trang web vẫn hoạt động trơn tru. Nginx Load Balancer trên Proxy đã phát hiện BE1 bị down và tự động đẩy 100% traffic sang **BE2** để xử lý. Người dùng không hề biết hệ thống có 1 máy bị lỗi.
