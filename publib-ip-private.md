@@ -21,6 +21,10 @@ B6: tạo certificate cho domain mới
 ```
 certbot certonly --webroot -w /var/www/html -d i-com-ung.paytech.vn
 ```
+- note: tìm xem có domain nào dùng kiểu wildcard certificate không
+```
+certbot certificates | grep -F "*.paytech.vn" -B 2 -A 2
+```
 note: phải đưa config về dạng
 ```
 server {
