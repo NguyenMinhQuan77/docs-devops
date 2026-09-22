@@ -1,22 +1,40 @@
-B1: trỏ domain i-com-dashboard-ung.paytech.vn vào ip public của firewall(103.35.64.198)
+B1: Trỏ domain i-com-ung.vn vào ip public của firewall(103.35.64.198)
 
 B2: Truy cập vào setup-2F(192.168.200.195) -> ssh vào Proxy 1F(192.169.200.21) 
 
-B3: cd vào /etc/nginx/sites-available/ và kiểm tra xem domain đã được dùng chưa
+B3: Tạo folder /etc/nginx/conf.d/autoreport cho dự án mới
 ```
-cd  /etc/nginx/sites-available/
-ls | grep i-com-dashboard-ung.paytech.vn.conf
+mkdir /etc/nginx/conf.d/autoreport
 ```
-
-B4: Tạo file config cho domain cần public vi /etc/nginx/sites-available/i-com-dashboard-ung.paytech.vn.conf
+B4: Quét thêm folder vừa tạo vào file /etc/nginx/nginx.conf vào ngay dưới các include khác
+```
+include /etc/nginx/conf.d/autoreport/*.conf;
+```
+B5 Kiểm tra và reload lại cấu hình
+```
+nginx -t
+systemctl reload nginx
+```
+B6: Tạo file config cho domain cần public vi /etc/nginx/conf.d/autoreport/i-com-ung.vn.conf
 
 ```
 server {
     listen 80;
-    server_name i-com-dashboard-ung.paytech.vn;
+    server_name i-com-ung.vn;
+    return 301 https://$host$request_uri;
+}
 
-    access_log /var/log/nginx/i-com-dashboard-ung.access.log;
-    error_log /var/log/nginx/i-com-dashboard-ung.error.log;
+server {
+    listen 443 ssl;
+    server_name i-com-ung.vn;
+
+    access_log /var/log/nginx/i-com-ung.access.log;
+    error_log  /var/log/nginx/i-com-ung.error.log;
+
+    ssl_certificate /etc/letsencrypt/live/i-com-ung.vn/fullchain.pem; 
+    ssl_certificate_key /etc/letsencrypt/live/i-com-ung.vn/privkey.pem; 
+    include /etc/letsencrypt/options-ssl-nginx.conf; 
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; 
 
     location / {
         proxy_pass http://192.168.200.120:8502;
@@ -27,8 +45,8 @@ server {
     }
 }
 ```
-B5 Kiểm tra và reload lại cấu hình
+B7 Kiểm tra và reload lại cấu hình
 ```
 nginx -t
-systemctl reload config
+systemctl reload nginx
 ```
