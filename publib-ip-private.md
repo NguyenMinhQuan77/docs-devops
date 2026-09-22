@@ -2,15 +2,15 @@ B1: Trỏ domain i-com-ung.paytech.vn vào ip public của firewall(103.35.64.19
 
 B2: Truy cập vào setup-2F(192.168.200.195) -> ssh vào Proxy 1F(192.169.200.21) 
 
-B3: Tạo folder /etc/nginx/conf.d/ungdatambf  cho dự án mới và phân quyền
+B3: Tạo folder /etc/nginx/conf.d/ungdatambf cho dự án mới và phân quyền
 ```
-mkdir /etc/nginx/conf.d/ungdatambf 
-chown root:root /etc/nginx/conf.d/ungdatambf 
-chmod 755 /etc/nginx/conf.d/ungdatambf 
+mkdir /etc/nginx/conf.d/ungdatambf
+chown root:root /etc/nginx/conf.d/ungdatambf
+chmod 755 /etc/nginx/conf.d/ungdatambf
 ```
 B4: Quét thêm folder vừa tạo vào file /etc/nginx/nginx.conf vào ngay dưới các include khác
 ```
-include /etc/nginx/conf.d/ungdatambf /*.conf;
+include /etc/nginx/conf.d/ungdatambf/*.conf;
 ```
 B5 Kiểm tra và reload lại cấu hình
 ```
@@ -22,7 +22,7 @@ B6: tạo certificate cho domain mới
 mkdir -p /etc/letsencrypt/live/i-com-ung.paytech.vn
 cp -a /etc/letsencrypt/live/lending.paytech.vn/* /etc/letsencrypt/live/i-com-ung.paytech.vn/
 ```
-B6: Tạo file config cho domain cần public vi /etc/nginx/conf.d/ungdatambf /i-com-ung.paytech.vn.conf
+B6: Tạo file config cho domain cần public vi /etc/nginx/conf.d/ungdatambf/i-com-ung.paytech.vn.conf
 
 ```
 server {
