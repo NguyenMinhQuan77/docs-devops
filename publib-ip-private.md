@@ -25,6 +25,12 @@ cp -a /etc/letsencrypt/live/lending.paytech.vn/* /etc/letsencrypt/live/i-com-ung
 B6: Tạo file config cho domain cần public vi /etc/nginx/conf.d/ungdatambf/i-com-ung.paytech.vn.conf
 
 ```
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 80;
     server_name i-com-ung.paytech.vn;
@@ -38,22 +44,40 @@ server {
     access_log /var/log/nginx/i-com-ung.access.log;
     error_log  /var/log/nginx/i-com-ung.error.log;
 
-    ssl_certificate /etc/letsencrypt/live/i-com-ung.paytech.vn/fullchain.pem; 
-    ssl_certificate_key /etc/letsencrypt/live/i-com-ung.paytech.vn/privkey.pem; 
-    include /etc/letsencrypt/options-ssl-nginx.conf; 
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; 
+    ssl_certificate /etc/letsencrypt/live/i-com-ung.paytech.vn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/i-com-ung.paytech.vn/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     location / {
         proxy_pass http://192.168.200.120:8502;
+
+        # WebSocket cho Streamlit
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Giữ kết nối WebSocket lâu, không buffer
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        proxy_buffering off;
     }
 }
+
 ```
 B7 Kiểm tra và reload lại cấu hình
 ```
 nginx -t
 systemctl reload nginx
+```
+B8 Đứng ở backend, accept iptable cho phép proxy đổ traffic vào
+```
+iptables -I OUTPUT -p tcp -d 192.168.200.120 --dport 8502 -j ACCEPT
+iptables -I INPUT -p tcp -s 192.168.200.21 --dport 8502 -j ACCEPT
+
 ```
