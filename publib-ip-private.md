@@ -103,7 +103,10 @@ systemctl reload nginx
 ```
 B8 Đứng ở backend, accept iptable cho phép proxy đổ traffic vào
 ```
-iptables -I OUTPUT -p tcp -d 192.168.200.120 --dport 8502 -j ACCEPT
 iptables -I INPUT -p tcp -s 192.168.200.21 --dport 8502 -j ACCEPT
 
+```
+B9 Đứng ở proxy, accept iptable cho phép proxy đổ traffic vào
+```
+iptables -I OUTPUT -p tcp -d 192.168.200.120 --dport 8502 -j ACCEPT
 ```
