@@ -19,24 +19,49 @@ systemctl reload nginx
 ```
 B6: tạo certificate cho domain mới
 ```
-mkdir -p /etc/letsencrypt/live/i-com-ung.paytech.vn
-cp -a /etc/letsencrypt/live/lending.paytech.vn/* /etc/letsencrypt/live/i-com-ung.paytech.vn/
+certbot certonly --webroot -w /var/www/html -d i-com-ung.paytech.vn
+```
+note: phải đưa config về dạng
+```
+server {
+    listen 80;
+    server_name i-com-ung.paytech.vn;
+
+    # Hướng xác thực của Let's Encrypt vào thư mục tĩnh nội bộ
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        allow all;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
 ```
 B6: Tạo file config cho domain cần public vi /etc/nginx/conf.d/ungdatambf/i-com-ung.paytech.vn.conf
 
 ```
-
 map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
 }
 
+# Block 1: Ép HTTPS và hỗ trợ Auto-renew SSL
 server {
     listen 80;
     server_name i-com-ung.paytech.vn;
-    return 301 https://$host$request_uri;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        allow all;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
+# Block 2: Xử lý HTTPS và Proxy cho Streamlit
 server {
     listen 443 ssl;
     server_name i-com-ung.paytech.vn;
@@ -44,8 +69,10 @@ server {
     access_log /var/log/nginx/i-com-ung.access.log;
     error_log  /var/log/nginx/i-com-ung.error.log;
 
+    # Đường dẫn SSL chuẩn của tên miền
     ssl_certificate /etc/letsencrypt/live/i-com-ung.paytech.vn/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/i-com-ung.paytech.vn/privkey.pem;
+    
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
@@ -68,7 +95,6 @@ server {
         proxy_buffering off;
     }
 }
-
 ```
 B7 Kiểm tra và reload lại cấu hình
 ```
