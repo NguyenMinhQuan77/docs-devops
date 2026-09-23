@@ -79,16 +79,16 @@ sudo apt install -y nginx keepalived
 ```
 
 **Đồng bộ cấu hình Nginx từ Proxy Master:**
-Bạn cần chép file cấu hình Load Balancer (VD: `test.vn.conf`) và chứng chỉ SSL (nếu có) từ Master sang Backup. Đứng tại Proxy Backup, chạy các lệnh sau:
+Bạn cần chép file cấu hình Load Balancer (VD: `test.com.conf`) và chứng chỉ SSL (nếu có) từ Master sang Backup. Đứng tại Proxy Backup, chạy các lệnh sau:
 ```bash
 # Copy cấu hình Nginx từ Master sang Backup
-scp root@192.168.10.204:/etc/nginx/sites-available/test.vn.conf /etc/nginx/sites-available/
+scp root@192.168.10.204:/etc/nginx/sites-available/test.com.conf /etc/nginx/sites-available/
 
 # Kích hoạt cấu hình vừa copy
-sudo ln -s /etc/nginx/sites-available/test.vn.conf /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/test.com.conf /etc/nginx/sites-enabled/
 sudo systemctl restart nginx
 ```
-*(Lưu ý: Nếu bạn dùng thư mục `conf.d`, hãy copy file `/etc/nginx/conf.d/test.vn.conf`. Nếu có SSL, copy thêm thư mục chứa Cert).*
+*(Lưu ý: Nếu bạn dùng thư mục `conf.d`, hãy copy file `/etc/nginx/conf.d/test.com.conf`. Nếu có SSL, copy thêm thư mục chứa Cert).*
 
 Tạo file cấu hình Keepalived:
 ```bash
