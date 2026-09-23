@@ -1,25 +1,20 @@
 # Hướng dẫn thiết lập High Availability (Keepalived + MariaDB Replication) trên Ubuntu
 
 ## 1. Mô hình hệ thống (Topology)
-Hệ thống bao gồm 3 lớp High Availability (HA):
-*   **Lớp VIP (Keepalived VRRP):** 1 IP ảo, 2 proxy luân phiên giữ.
-*   **Lớp Backend (Nginx Load Balance):** Cân bằng tải các request web.
-*   **Lớp Database (MariaDB Replication):** Master ghi dữ liệu, Slave đọc và standby dự phòng.
-
-*Thông tin các Node:*
-*   **Proxy MASTER:** `192.168.32.135`
-*   **Proxy BACKUP:** `192.168.32.136`
-*   **VIP (Virtual IP):** `192.168.32.100`
-*   **Backend 1:** `192.168.32.133`
-*   **Backend 2:** `192.168.32.134`
-*   **DB MASTER:** `192.168.32.137`
-*   **DB SLAVE:** `192.168.32.138`
+Hệ thống được thiết kế tách biệt các tầng (Proxy, Web Backend, Database) để đảm bảo độ sẵn sàng cao (High Availability) và chia tải hiệu quả:
+*   **Proxy Master (đã có từ Lab 2):** `192.168.10.204` (Chạy Nginx Load Balancer và Keepalived Master)
+*   **Proxy Backup (VM mới):** `192.168.10.208` (Chạy Nginx Load Balancer và Keepalived Backup)
+*   **VIP (Virtual IP):** `192.168.10.210` (IP ảo gắn trên Proxy, dùng làm cổng truy cập chung)
+*   **DB Master (VM mới):** `192.168.10.207` (Chạy MariaDB đóng vai trò Master)
+*   **DB Slave (VM mới):** `192.168.10.206` (Chạy MariaDB đóng vai trò Slave dự phòng)
+*   **Backend 1 (BE1):** `192.168.10.200` (Máy chủ Web Nginx + PHP-FPM)
+*   **Backend 2 (BE2):** `192.168.10.205` (Máy chủ Web Nginx + PHP-FPM)
 
 ---
 
 ## 2. Phần A — Cài đặt và cấu hình Keepalived VRRP
 
-### 2.1. Cấu hình trên Proxy MASTER (`192.168.32.135`)
+### 2.1. Cấu hình trên Proxy MASTER (`192.168.10.204`)
 Cài đặt Nginx và Keepalived trên Ubuntu:
 ```bash
 sudo apt update
@@ -34,16 +29,16 @@ Nội dung cấu hình:
 ```conf
 vrrp_instance VI_LEMP {
     state MASTER
-    interface ens33               # Tên card mạng (kiểm tra bằng lệnh ip a)
+    interface ens160              # Tên card mạng (kiểm tra bằng lệnh ip a, ví dụ ens160 hoặc ens33)
     virtual_router_id 151         # VRID duy nhất cho cụm này
     priority 101                  # Mức độ ưu tiên (cao hơn = Master)
     advert_int 1
     authentication {
         auth_type PASS
-        auth_pass LempHA2024      # Mật khẩu xác thực chung nhóm
+        auth_pass LempHA2026      # Mật khẩu xác thực chung nhóm
     }
     virtual_ipaddress {
-        192.168.32.100            # IP ảo (VIP)
+        192.168.10.210            # IP ảo (VIP)
     }
     track_script {
         check_nginx
@@ -76,7 +71,7 @@ sudo chmod +x /etc/keepalived/check_nginx.sh
 sudo systemctl enable --now keepalived
 ```
 
-### 2.2. Cấu hình trên Proxy BACKUP (`192.168.32.136`)
+### 2.2. Cấu hình trên Proxy BACKUP (`192.168.10.208`)
 Cài đặt tương tự:
 ```bash
 sudo apt update
@@ -89,16 +84,16 @@ sudo nano /etc/keepalived/keepalived.conf
 ```conf
 vrrp_instance VI_LEMP {
     state BACKUP
-    interface ens33
+    interface ens160
     virtual_router_id 151
     priority 90                   # Thấp hơn MASTER
     advert_int 1
     authentication {
         auth_type PASS
-        auth_pass LempHA2024
+        auth_pass LempHA2026
     }
     virtual_ipaddress {
-        192.168.32.100
+        192.168.10.210
     }
 }
 ```
@@ -111,7 +106,7 @@ sudo systemctl enable --now keepalived
 
 ## 3. Phần B — Thiết lập MariaDB Replication
 
-### 3.1. Cấu hình trên DB MASTER (`192.168.32.137`)
+### 3.1. Cấu hình trên DB MASTER (`192.168.10.207`)
 Cài đặt MariaDB trên Ubuntu:
 ```bash
 sudo apt update
@@ -143,8 +138,8 @@ Tạo user Replication và lấy vị trí Binlog:
 sudo mariadb -u root -p
 ```
 ```sql
-CREATE USER 'repl'@'192.168.32.138' IDENTIFIED BY 'ReplPass123!';
-GRANT REPLICATION SLAVE ON *.* TO 'repl'@'192.168.32.138';
+CREATE USER 'repl'@'192.168.10.206' IDENTIFIED BY 'ReplPass123!';
+GRANT REPLICATION SLAVE ON *.* TO 'repl'@'192.168.10.206';
 FLUSH PRIVILEGES;
 
 -- Khóa bảng để backup (chống write mới)
@@ -158,7 +153,7 @@ SHOW MASTER STATUS;
 Dump dữ liệu (Mở một Tab Terminal khác, giữ nguyên tab SQL đang lock):
 ```bash
 sudo mysqldump -u root -p --all-databases --master-data=2 > /tmp/master.sql
-scp /tmp/master.sql root@192.168.32.138:/tmp/
+scp /tmp/master.sql root@192.168.10.206:/tmp/
 ```
 Quay lại Tab Terminal SQL và mở khóa bảng:
 ```sql
@@ -166,7 +161,7 @@ UNLOCK TABLES;
 EXIT;
 ```
 
-### 3.2. Cấu hình trên DB SLAVE (`192.168.32.138`)
+### 3.2. Cấu hình trên DB SLAVE (`192.168.10.206`)
 Cài đặt MariaDB:
 ```bash
 sudo apt update
@@ -198,7 +193,7 @@ sudo mariadb -u root -p
 ```
 ```sql
 CHANGE MASTER TO
-    MASTER_HOST='192.168.32.137',
+    MASTER_HOST='192.168.10.207',
     MASTER_USER='repl',
     MASTER_PASSWORD='ReplPass123!',
     MASTER_LOG_FILE='mysql-bin.000001',   -- Thay bằng Tên File thực tế đã lưu ở trên
@@ -214,16 +209,16 @@ SHOW SLAVE STATUS\G
 ## 4. Kiểm tra hệ thống (Test Failover)
 
 **Kiểm tra Proxy HA:**
-1. Truy cập Proxy MASTER và tắt Nginx (`sudo systemctl stop nginx`).
-2. Sang Proxy BACKUP chạy lệnh `ip a | grep 192.168.32.100`. Nếu thấy VIP xuất hiện, Failover thành công.
+1. Truy cập Proxy MASTER (`192.168.10.204`) và tắt Nginx (`sudo systemctl stop nginx`).
+2. Sang Proxy BACKUP (`192.168.10.208`) chạy lệnh `ip a | grep 192.168.10.210`. Nếu thấy VIP xuất hiện, Failover thành công.
 
 **Kiểm tra DB Replication:**
-1. Trên DB MASTER tạo dữ liệu:
+1. Trên DB MASTER (`192.168.10.207`) tạo dữ liệu:
    ```sql
    USE wordpress;
    INSERT INTO wp_options (option_name, option_value) VALUES ('test_repl', 'hello_ubuntu');
    ```
-2. Sang DB SLAVE kiểm tra:
+2. Sang DB SLAVE (`192.168.10.206`) kiểm tra:
    ```sql
    USE wordpress;
    SELECT * FROM wp_options WHERE option_name = 'test_repl';
